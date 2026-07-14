@@ -147,6 +147,12 @@ html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
 .pop-company{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
 .pop-note{font-size:12px;line-height:1.5;margin-bottom:8px;color:#c8cdd5;}
 .pop-source{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;border-top:1px solid var(--line);padding-top:7px;}
+.pop-gmaps{
+  display:inline-block;margin-top:9px;font-size:11.5px;font-family:'IBM Plex Mono',monospace;
+  color:var(--op);text-decoration:none;border:1px solid rgba(45,212,191,0.35);
+  padding:6px 10px;border-radius:6px;background:rgba(45,212,191,0.08);
+}
+.pop-gmaps:hover{background:rgba(45,212,191,0.15);}
 .leaflet-container{font-family:'Space Grotesk',sans-serif;}
 
 .chip.locked{opacity:0.55;cursor:pointer;}
@@ -426,6 +432,7 @@ async function refreshCameraLayer(){
       <div class="pop-name">ALPR Camera</div>
       <div class="pop-company" style="color:#60a5fa;">${operator}${direction}</div>
       <div class="pop-note">Sourced from OpenStreetMap community data (same source as DeFlock.org).</div>
+      ${gmapsLink(c.lat, c.lng)}
     `);
     marker.addTo(map);
     return marker;
@@ -512,19 +519,7 @@ async function initMap(){
   // the main facilities view from working.
   try {
     const reports = await fetchCommunityReports();
-    communityMarkers.forEach(m => map.removeLayer(m));
-    communityMarkers = reports.map(r => {
-      const marker = L.marker([r.lat, r.lng], { icon: makeCommunityIcon() });
-      const desc = r.description ? escapeHtml(r.description) : 'No additional details provided.';
-      const date = new Date(r.created_at).toLocaleDateString();
-      marker.bindPopup(`
-        <div class="pop-name">Community Reported</div>
-        <div class="pop-company" style="color:#ef4b5c;">Unverified · ${date}</div>
-        <div class="pop-note">${desc}</div>
-      `);
-      marker.addTo(map);
-      return marker;
-    });
+    renderCommunityMarkers(reports);
   } catch (err) {
     console.error('Could not render community reports', err);
   }
@@ -551,6 +546,7 @@ function renderMarkers(){
       <div class="pop-company">${escapeHtml(d.company)} · ${escapeHtml(d.city)}</div>
       <div class="pop-note">${escapeHtml(d.note)}</div>
       <div class="pop-source">SRC: ${escapeHtml(d.source)}</div>
+      ${gmapsLink(d.lat, d.lng)}
     `, { closeButton: true, autoPan: true });
     // Just update selection + sidebar highlight; do NOT rebuild all markers here,
     // or the popup gets destroyed before it can open.
@@ -578,6 +574,28 @@ function escapeHtml(s){
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+function gmapsLink(lat, lng){
+  const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  return `<a class="pop-gmaps" href="${url}" target="_blank" rel="noopener">📍 Open in Google Maps</a>`;
+}
+
+function renderCommunityMarkers(reports){
+  communityMarkers.forEach(m => map.removeLayer(m));
+  communityMarkers = reports.map(r => {
+    const marker = L.marker([r.lat, r.lng], { icon: makeCommunityIcon() });
+    const desc = r.description ? escapeHtml(r.description) : 'No additional details provided.';
+    const date = new Date(r.created_at).toLocaleDateString();
+    marker.bindPopup(`
+      <div class="pop-name">Community Reported</div>
+      <div class="pop-company" style="color:#ef4b5c;">Unverified · ${date}</div>
+      <div class="pop-note">${desc}</div>
+      ${gmapsLink(r.lat, r.lng)}
+    `);
+    marker.addTo(map);
+    return marker;
+  });
 }
 
 function renderList(filteredIn){
@@ -919,19 +937,7 @@ document.getElementById('report-submit').addEventListener('click', async () => {
     alert('Thanks — your report has been added to the map for other users to see.');
     // Refresh community layer so the new pin shows immediately
     const reports = await fetchCommunityReports();
-    communityMarkers.forEach(m => map.removeLayer(m));
-    communityMarkers = reports.map(r => {
-      const marker = L.marker([r.lat, r.lng], { icon: makeCommunityIcon() });
-      const desc = r.description ? escapeHtml(r.description) : 'No additional details provided.';
-      const date = new Date(r.created_at).toLocaleDateString();
-      marker.bindPopup(`
-        <div class="pop-name">Community Reported</div>
-        <div class="pop-company" style="color:#ef4b5c;">Unverified · ${date}</div>
-        <div class="pop-note">${desc}</div>
-      `);
-      marker.addTo(map);
-      return marker;
-    });
+    renderCommunityMarkers(reports);
   } catch (err) {
     console.error('Report submission failed', err);
     alert("Couldn't submit your report:\n\n" + err.message);
