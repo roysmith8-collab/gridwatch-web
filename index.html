@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRIDWATCH — Data Center Locator</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --bg: #0a0c10;
+  --panel: #12151b;
+  --panel-2: #171b22;
+  --line: #232830;
+  --text: #e6e9ee;
+  --muted: #7a8290;
+  --op: #2dd4bf;
+  --con: #f5a623;
+  --pro: #a78bfa;
+  --danger: #ef4b5c;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;overflow:hidden;}
+
+#app{display:flex;height:100vh;height:100dvh;width:100vw;}
+
+/* ---------- Sidebar ---------- */
+#sidebar{
+  width:380px;min-width:380px;
+  background:var(--panel);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;
+  height:100%;
+  z-index:10;
+}
+#brand{
+  padding:18px 20px 14px 20px;
+  border-bottom:1px solid var(--line);
+  flex-shrink:0;
+}
+#brand h1{
+  font-size:16px;letter-spacing:0.14em;margin:0 0 3px 0;font-weight:700;
+  font-family:'IBM Plex Mono',monospace;
+  display:flex;align-items:center;gap:8px;
+}
+#brand h1 .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--op);
+  box-shadow:0 0 8px var(--op);
+  animation:pulse 2.2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+#brand p{margin:0;color:var(--muted);font-size:11.5px;font-family:'IBM Plex Mono',monospace;letter-spacing:0.02em;}
+
+#controls{padding:12px 20px 10px 20px;border-bottom:1px solid var(--line);flex-shrink:0;}
+#search{
+  width:100%;background:var(--panel-2);border:1px solid var(--line);
+  color:var(--text);padding:10px 12px;border-radius:6px;font-size:13.5px;
+  font-family:'IBM Plex Mono',monospace;
+  outline:none;
+}
+#search::placeholder{color:var(--muted);}
+#search:focus{border-color:#3a4250;}
+
+#locbtn{
+  margin-top:8px;width:100%;
+  background:transparent;border:1px solid var(--line);color:var(--text);
+  padding:9px 12px;border-radius:6px;font-size:12.5px;cursor:pointer;
+  font-family:'IBM Plex Mono',monospace;letter-spacing:0.03em;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  transition:border-color .15s, background .15s;
+}
+#locbtn:hover{border-color:#3a4250;background:var(--panel-2);}
+#locbtn svg{width:14px;height:14px;stroke:var(--op);}
+#locbtn.active{border-color:var(--op);color:var(--op);}
+
+#filters{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.chip{
+  font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0.03em;
+  padding:6px 10px;border-radius:20px;border:1px solid var(--line);
+  cursor:pointer;color:var(--muted);user-select:none;
+  display:flex;align-items:center;gap:6px;transition:all .15s;
+  background:var(--panel-2);
+}
+.chip .sw{width:7px;height:7px;border-radius:50%;}
+.chip[data-status="operational"] .sw{background:var(--op);}
+.chip[data-status="construction"] .sw{background:var(--con);}
+.chip[data-status="proposed"] .sw{background:var(--pro);}
+.chip.active[data-status="operational"]{border-color:var(--op);color:var(--op);background:rgba(45,212,191,0.08);}
+.chip.active[data-status="construction"]{border-color:var(--con);color:var(--con);background:rgba(245,166,35,0.08);}
+.chip.active[data-status="proposed"]{border-color:var(--pro);color:var(--pro);background:rgba(167,139,250,0.08);}
+
+#actionRow{display:flex;gap:6px;margin-top:8px;}
+#cameraToggle.active{border-color:#60a5fa;color:#60a5fa;background:rgba(96,165,250,0.08);}
+
+#count{
+  padding:10px 20px;font-family:'IBM Plex Mono',monospace;font-size:11px;
+  color:var(--muted);border-bottom:1px solid var(--line);flex-shrink:0;
+  letter-spacing:0.03em;
+}
+#count b{color:var(--text);}
+
+#list{flex:1;overflow-y:auto;}
+#list::-webkit-scrollbar{width:6px;}
+#list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+
+.card{
+  padding:13px 20px;border-bottom:1px solid var(--line);cursor:pointer;
+  transition:background .12s;
+}
+.card:hover{background:var(--panel-2);}
+.card.selected{background:var(--panel-2);border-left:2px solid var(--op);padding-left:18px;}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;}
+.card-name{font-size:13.5px;font-weight:600;line-height:1.3;}
+.badge{
+  font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:0.05em;
+  padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;text-transform:uppercase;
+  margin-top:1px;
+}
+.badge.operational{background:rgba(45,212,191,0.12);color:var(--op);}
+.badge.construction{background:rgba(245,166,35,0.12);color:var(--con);}
+.badge.proposed{background:rgba(167,139,250,0.12);color:var(--pro);}
+.card-meta{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.card-dist{font-size:10.5px;color:var(--op);font-family:'IBM Plex Mono',monospace;margin-top:3px;}
+
+/* ---------- Map ---------- */
+#mapwrap{flex:1;position:relative;height:100%;}
+#map{width:100%;height:100%;background:var(--bg);}
+
+#legend{
+  position:absolute;bottom:20px;left:16px;z-index:400;
+  background:rgba(18,21,27,0.92);border:1px solid var(--line);border-radius:8px;
+  padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;
+  backdrop-filter:blur(4px);
+}
+.legend-row{display:flex;align-items:center;gap:7px;margin:3px 0;color:var(--muted);}
+.legend-dot{width:8px;height:8px;border-radius:50%;}
+
+.leaflet-popup-content-wrapper{
+  background:var(--panel);color:var(--text);border-radius:8px;border:1px solid var(--line);
+}
+.leaflet-popup-tip{background:var(--panel);}
+.leaflet-popup-content{margin:14px 16px;font-family:'Space Grotesk',sans-serif;width:260px !important;}
+.pop-name{font-size:14px;font-weight:700;margin-bottom:2px;}
+.pop-company{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
+.pop-note{font-size:12px;line-height:1.5;margin-bottom:8px;color:#c8cdd5;}
+.pop-source{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;border-top:1px solid var(--line);padding-top:7px;}
+.leaflet-container{font-family:'Space Grotesk',sans-serif;}
+
+.chip.locked{opacity:0.55;cursor:pointer;}
+.chip .lock{font-size:10px;margin-left:2px;}
+
+#upgradeRow,#notifyRow,#reportRow{flex:1;}
+.iconbtn{
+  width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+  padding:9px 6px;border-radius:6px;font-size:16px;cursor:pointer;
+  font-family:'IBM Plex Mono',monospace;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  transition:border-color .15s,background .15s;
+}
+.iconbtn span{font-size:9.5px;letter-spacing:0.02em;color:var(--muted);}
+#upgradeBtn{background:linear-gradient(135deg,#1a2e2a,#161b26);border-color:rgba(45,212,191,0.35);}
+#upgradeBtn span{color:#5eead4;}
+#upgradeBtn:hover{border-color:#2dd4bf;}
+#notifyBtn:hover{border-color:#3a4250;}
+#notifyBtn.enabled{border-color:var(--op);background:rgba(45,212,191,0.08);}
+#notifyBtn.enabled span{color:var(--op);}
+#reportBtn:hover{border-color:#ef4b5c;}
+#reportBtn:hover span{color:#ef4b5c;}
+
+#report-overlay{
+  position:fixed;inset:0;background:rgba(6,8,11,0.75);backdrop-filter:blur(3px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+#report-overlay.show{display:flex;}
+#report-card{
+  width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;padding:26px 24px;text-align:center;position:relative;
+}
+#report-card .icon{
+  width:54px;height:54px;border-radius:50%;margin:0 auto 16px auto;
+  display:flex;align-items:center;justify-content:center;font-size:24px;
+}
+#report-card h2{margin:0 0 8px 0;font-size:19px;font-weight:700;}
+#report-card p{margin:0 0 14px 0;color:var(--muted);font-size:13px;line-height:1.6;}
+#report-loc-status{
+  font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--op);
+  background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.25);
+  border-radius:6px;padding:8px 10px;margin-bottom:14px;
+}
+#report-loc-status.error{color:#ef4b5c;background:rgba(239,75,92,0.08);border-color:rgba(239,75,92,0.25);}
+#report-description{
+  width:100%;min-height:90px;background:var(--panel-2);border:1px solid var(--line);
+  color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;
+  font-family:'Space Grotesk',sans-serif;resize:vertical;margin-bottom:14px;
+  box-sizing:border-box;
+}
+#report-submit{
+  width:100%;background:#ef4b5c;color:#fff;border:none;padding:13px;
+  border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;
+  font-family:'Space Grotesk',sans-serif;
+}
+#report-submit:hover{background:#f87171;}
+#report-submit:disabled{opacity:0.5;cursor:not-allowed;}
+.report-disclaimer{font-size:10.5px !important;color:var(--muted);margin-top:12px !important;line-height:1.5;}
+#report-close{
+  position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);
+  font-size:20px;cursor:pointer;line-height:1;
+}
+
+#paywall-overlay{
+  position:fixed;inset:0;background:rgba(6,8,11,0.75);backdrop-filter:blur(3px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+#paywall-overlay.show{display:flex;}
+#paywall-card{
+  width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;padding:26px 24px;text-align:center;
+}
+#paywall-card .icon{
+  width:54px;height:54px;border-radius:50%;margin:0 auto 16px auto;
+  background:radial-gradient(circle,#5eead4,#14b8a6);
+  display:flex;align-items:center;justify-content:center;font-size:24px;
+}
+#paywall-card h2{margin:0 0 8px 0;font-size:19px;font-weight:700;}
+#paywall-card p{margin:0 0 20px 0;color:var(--muted);font-size:13px;line-height:1.6;}
+#paywall-card .feature{
+  display:flex;align-items:center;gap:8px;text-align:left;font-size:12.5px;
+  color:#c8cdd5;margin-bottom:9px;font-family:'IBM Plex Mono',monospace;
+}
+#paywall-card .feature .dot{width:6px;height:6px;border-radius:50%;background:var(--op);flex-shrink:0;}
+#paywall-card .price{
+  font-size:26px;font-weight:700;margin:18px 0 4px 0;font-family:'IBM Plex Mono',monospace;
+}
+#paywall-card .price span{font-size:13px;color:var(--muted);font-weight:400;}
+#paywall-buy{
+  width:100%;background:var(--op);color:#06110f;border:none;padding:13px;
+  border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;margin-top:12px;
+  font-family:'Space Grotesk',sans-serif;
+}
+#paywall-buy:hover{background:#5eead4;}
+#paywall-restore{
+  background:none;border:none;color:var(--muted);font-size:11.5px;margin-top:14px;
+  cursor:pointer;text-decoration:underline;font-family:'IBM Plex Mono',monospace;
+}
+#paywall-close{
+  position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);
+  font-size:20px;cursor:pointer;line-height:1;
+}
+#paywall-card{position:relative;}
+
+#empty{padding:30px 20px;text-align:center;color:var(--muted);font-size:12.5px;font-family:'IBM Plex Mono',monospace;}
+
+#cameraHint{
+  display:none;position:absolute;top:16px;left:50%;transform:translateX(-50%);
+  background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.4);color:#60a5fa;
+  padding:8px 16px;border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+  z-index:450;white-space:nowrap;
+}
+
+
+@media (max-width: 720px){
+  html,body{height:100%;}
+  #app{flex-direction:column;height:100dvh;}
+  #sidebar{
+    position:relative;
+    order:2;
+    width:100%;min-width:0;
+    height:52vh;height:52dvh;
+    flex:0 0 auto;
+    border-right:none;border-top:1px solid var(--line);
+  }
+  #mapwrap{
+    order:1;
+    flex:1 1 auto;
+    min-height:0;
+  }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div id="brand">
+      <h1><span class="dot"></span>GRIDWATCH</h1>
+      <p>US AI / hyperscale data center tracker</p>
+    </div>
+    <div id="controls">
+      <input id="search" type="text" placeholder="Search name, company, or city..." />
+      <button id="locbtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+        USE MY LOCATION
+      </button>
+      <div id="filters">
+        <div class="chip active" data-status="operational"><span class="sw"></span>Operational</div>
+        <div class="chip locked" data-status="construction"><span class="sw"></span>Construction<span class="lock">🔒</span></div>
+        <div class="chip locked" data-status="proposed"><span class="sw"></span>Proposed<span class="lock">🔒</span></div>
+        <div class="chip" id="cameraToggle"><span class="sw" style="background:#60a5fa;border-radius:2px;"></span>ALPR</div>
+      </div>
+      <div id="actionRow">
+        <div id="upgradeRow"><button id="upgradeBtn" class="iconbtn" title="Unlock Pro — see construction & proposed sites">⚡<span>Pro</span></button></div>
+        <div id="notifyRow" style="display:none;"><button id="notifyBtn" class="iconbtn" title="Notify me about status changes near me">🔔<span>Alerts</span></button></div>
+        <div id="reportRow"><button id="reportBtn" class="iconbtn" title="Report a data center near me">📍<span>Report</span></button></div>
+      </div>
+    </div>
+    <div id="count">Showing <b id="countNum">0</b> of <b id="countTotal">0</b> facilities</div>
+    <div id="list"></div>
+  </div>
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div id="cameraHint">Zoom in to see ALPR cameras in this area</div>
+    <div id="legend">
+      <div class="legend-row"><span class="legend-dot" style="background:#2dd4bf"></span>Operational</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#f5a623"></span>Under construction</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#a78bfa"></span>Proposed</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#ef4b5c;border:1px dashed #ef4b5c;background:transparent;"></span>Community reported (unverified)</div>
+      <div class="legend-row"><span class="legend-dot" style="background:#60a5fa;border-radius:2px;"></span>ALPR camera (OpenStreetMap)</div>
+    </div>
+  </div>
+</div>
+
+<div id="paywall-overlay">
+  <div id="paywall-card">
+    <button id="paywall-close">&times;</button>
+    <div class="icon">⚡</div>
+    <h2>Unlock GRIDWATCH Pro</h2>
+    <p>See the full build-out picture, not just what's already live.</p>
+    <div class="feature"><span class="dot" style="background:#f5a623"></span>Under-construction facilities</div>
+    <div class="feature"><span class="dot" style="background:#a78bfa"></span>Proposed / pre-construction sites</div>
+    <div class="feature"><span class="dot" style="background:#2dd4bf"></span>Full source citations on every entry</div>
+    <div class="price">$4.99<span>/month</span></div>
+    <button id="paywall-buy">Start Subscription</button>
+    <button id="paywall-restore">Restore purchases</button>
+  </div>
+</div>
+
+<div id="report-overlay">
+  <div id="report-card">
+    <button id="report-close">&times;</button>
+    <div class="icon" style="background:radial-gradient(circle,#f87171,#ef4b5c);">📍</div>
+    <h2>Report a Data Center</h2>
+    <p>Seeing construction or a facility near you that's not on the map? Let others know.</p>
+    <div id="report-loc-status">Using your current location.</div>
+    <textarea id="report-description" maxlength="500" placeholder="Optional: what did you see? (e.g. 'Large fenced construction site off Route 9, cranes visible since March')"></textarea>
+    <button id="report-submit">Submit Report</button>
+    <p class="report-disclaimer">Reports are unverified and shown to other users as community-submitted sightings, not confirmed facilities.</p>
+  </div>
+</div>
+
+<script>
+// ---- Live data source (Supabase) ----
+const SUPABASE_URL = 'https://rjrrengyjbnzcrhhvohv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqcnJlbmd5amJuemNyaGh2b2h2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM4OTUyOTIsImV4cCI6MjA5OTQ3MTI5Mn0.X916VQ41a7jMD1sVygWh1IwZg-oz3adMnvn54uilxec';
+
+let DATA = [];
+
+async function fetchFacilities(){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/facilities?select=name,company,city,lat,lng,status,note,source`, {
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    }
+  });
+  if(!res.ok){
+    throw new Error(`Supabase fetch failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+async function fetchCommunityReports(){
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/community_reports?select=lat,lng,description,created_at&status=eq.pending`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    if(!res.ok) return [];
+    return res.json();
+  } catch (err) {
+    console.error('Could not load community reports', err);
+    return [];
+  }
+}
+
+async function fetchCamerasInBounds(bounds){
+  try {
+    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+    const url = `${SUPABASE_URL}/rest/v1/surveillance_cameras?select=lat,lng,camera_type,operator,direction`
+      + `&lat=gte.${sw.lat}&lat=lte.${ne.lat}&lng=gte.${sw.lng}&lng=lte.${ne.lng}&limit=800`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    if(!res.ok) return [];
+    return res.json();
+  } catch (err) {
+    console.error('Could not load camera data', err);
+    return [];
+  }
+}
+
+const CAMERA_MIN_ZOOM = 10;
+
+async function refreshCameraLayer(){
+  cameraMarkers.forEach(m => map.removeLayer(m));
+  cameraMarkers = [];
+  if(!camerasVisible) return;
+
+  if(map.getZoom() < CAMERA_MIN_ZOOM){
+    document.getElementById('cameraHint').style.display = 'block';
+    return;
+  }
+  document.getElementById('cameraHint').style.display = 'none';
+
+  const cameras = await fetchCamerasInBounds(map.getBounds());
+  cameraMarkers = cameras.map(c => {
+    const marker = L.marker([c.lat, c.lng], { icon: makeCameraIcon() });
+    const operator = c.operator ? escapeHtml(c.operator) : 'Unknown operator';
+    const direction = c.direction ? ` · facing ${escapeHtml(c.direction)}` : '';
+    marker.bindPopup(`
+      <div class="pop-name">ALPR Camera</div>
+      <div class="pop-company" style="color:#60a5fa;">${operator}${direction}</div>
+      <div class="pop-note">Sourced from OpenStreetMap community data (same source as DeFlock.org).</div>
+    `);
+    marker.addTo(map);
+    return marker;
+  });
+}
+
+
+const STATUS_COLOR = { operational: '#2dd4bf', construction: '#f5a623', proposed: '#a78bfa' };
+
+let map, markers = [], userMarker = null, userLatLng = null;
+let communityMarkers = [];
+let cameraMarkers = [];
+let camerasVisible = false;
+let activeStatuses = new Set(['operational']);
+// TEMP TEST OVERRIDE — remove this line before submitting to the Play Store.
+// Forces Pro features on locally so you can test paywall-gated features
+// (like notifications) before a real Play Console billing product exists.
+const TEST_FORCE_PRO = true; // <-- set to false (or delete this whole block) before shipping
+let hasPro = TEST_FORCE_PRO;
+let searchTerm = '';
+let selectedIdx = null;
+
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 3958.8; // miles
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function makeIcon(status, selected){
+  const color = STATUS_COLOR[status];
+  const size = selected ? 20 : 14;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #0a0c10;box-shadow:0 0 ${selected?12:6}px ${color};"></div>`,
+    iconSize: [size,size],
+    iconAnchor: [size/2,size/2]
+  });
+}
+
+function makeCommunityIcon(){
+  const size = 16;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:transparent;border:2px dashed #ef4b5c;box-shadow:0 0 6px rgba(239,75,92,0.4);"></div>`,
+    iconSize: [size,size],
+    iconAnchor: [size/2,size/2]
+  });
+}
+
+function makeCameraIcon(){
+  const size = 10;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:2px;background:#60a5fa;border:1px solid #0a0c10;box-shadow:0 0 5px rgba(96,165,250,0.6);"></div>`,
+    iconSize: [size,size],
+    iconAnchor: [size/2,size/2]
+  });
+}
+
+async function initMap(){
+  map = L.map('map', { zoomControl: true, attributionControl: true }).setView([39.5, -98.35], 4);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+
+  map.on('moveend', () => { if(camerasVisible) refreshCameraLayer(); });
+
+  document.getElementById('list').innerHTML = '<div id="empty">Loading facilities...</div>';
+
+  try {
+    DATA = await fetchFacilities();
+    renderMarkers();
+  } catch (err) {
+    document.getElementById('list').innerHTML =
+      `<div id="empty">Couldn't load live data.<br><span style="color:var(--danger)">${err.message}</span><br><br>Check your connection and refresh.</div>`;
+    document.getElementById('countTotal').textContent = '0';
+  }
+
+  // Community reports load independently -- a failure here shouldn't block
+  // the main facilities view from working.
+  try {
+    const reports = await fetchCommunityReports();
+    communityMarkers.forEach(m => map.removeLayer(m));
+    communityMarkers = reports.map(r => {
+      const marker = L.marker([r.lat, r.lng], { icon: makeCommunityIcon() });
+      const desc = r.description ? escapeHtml(r.description) : 'No additional details provided.';
+      const date = new Date(r.created_at).toLocaleDateString();
+      marker.bindPopup(`
+        <div class="pop-name">Community Reported</div>
+        <div class="pop-company" style="color:#ef4b5c;">Unverified · ${date}</div>
+        <div class="pop-note">${desc}</div>
+      `);
+      marker.addTo(map);
+      return marker;
+    });
+  } catch (err) {
+    console.error('Could not render community reports', err);
+  }
+}
+
+function getFiltered(){
+  const term = searchTerm.trim().toLowerCase();
+  return DATA.map((d,i)=>({...d, idx:i})).filter(d => {
+    if(d.status !== 'operational' && !hasPro) return false; // paywall gate
+    if(!activeStatuses.has(d.status)) return false;
+    if(!term) return true;
+    return d.name.toLowerCase().includes(term) || d.company.toLowerCase().includes(term) || d.city.toLowerCase().includes(term);
+  });
+}
+
+function renderMarkers(){
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  const filtered = getFiltered();
+  filtered.forEach(d => {
+    const marker = L.marker([d.lat, d.lng], { icon: makeIcon(d.status, d.idx===selectedIdx) });
+    marker.bindPopup(`
+      <div class="pop-name">${escapeHtml(d.name)}</div>
+      <div class="pop-company">${escapeHtml(d.company)} · ${escapeHtml(d.city)}</div>
+      <div class="pop-note">${escapeHtml(d.note)}</div>
+      <div class="pop-source">SRC: ${escapeHtml(d.source)}</div>
+    `, { closeButton: true, autoPan: true });
+    // Just update selection + sidebar highlight; do NOT rebuild all markers here,
+    // or the popup gets destroyed before it can open.
+    marker.on('click', () => {
+      selectedIdx = d.idx;
+      marker.setIcon(makeIcon(d.status, true));
+      markers.forEach(mk => { if(mk !== marker) mk.setIcon(makeIcon(mk.__status, false)); });
+      highlightListCard(d.idx);
+    });
+    marker.__status = d.status;
+    marker.__idx = d.idx;
+    marker.addTo(map);
+    markers.push(marker);
+  });
+  renderList(filtered);
+}
+
+function highlightListCard(idx){
+  document.querySelectorAll('#list .card').forEach(c => {
+    c.classList.toggle('selected', parseInt(c.dataset.idx) === idx);
+  });
+}
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function renderList(filteredIn){
+  const filtered = filteredIn || getFiltered();
+  const listEl = document.getElementById('list');
+  document.getElementById('countNum').textContent = filtered.length;
+  document.getElementById('countTotal').textContent = DATA.length;
+
+  let sorted = filtered;
+  if(userLatLng){
+    sorted = [...filtered].sort((a,b) => {
+      const da = haversine(userLatLng.lat, userLatLng.lng, a.lat, a.lng);
+      const db = haversine(userLatLng.lat, userLatLng.lng, b.lat, b.lng);
+      return da - db;
+    });
+  }
+
+  if(sorted.length === 0){
+    listEl.innerHTML = '<div id="empty">No facilities match your search.<br>Try a different term or filter.</div>';
+    return;
+  }
+
+  listEl.innerHTML = sorted.map(d => {
+    let distHtml = '';
+    if(userLatLng){
+      const dist = haversine(userLatLng.lat, userLatLng.lng, d.lat, d.lng);
+      distHtml = `<div class="card-dist">${dist.toFixed(0)} mi away</div>`;
+    }
+    return `
+    <div class="card ${d.idx===selectedIdx?'selected':''}" data-idx="${d.idx}">
+      <div class="card-top">
+        <div class="card-name">${escapeHtml(d.name)}</div>
+        <div class="badge ${d.status}">${d.status}</div>
+      </div>
+      <div class="card-meta">${escapeHtml(d.company)} · ${escapeHtml(d.city)}</div>
+      ${distHtml}
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', () => {
+      const idx = parseInt(card.dataset.idx);
+      selectedIdx = idx;
+      const d = DATA[idx];
+      highlightListCard(idx);
+      map.flyTo([d.lat, d.lng], 8, { duration: 0.8 });
+      const m = markers.find(mk => mk.__idx === idx || (mk.getLatLng().lat === d.lat && mk.getLatLng().lng === d.lng));
+      if(m){
+        m.setIcon(makeIcon(d.status, true));
+        markers.forEach(mk => { if(mk !== m) mk.setIcon(makeIcon(mk.__status, false)); });
+        setTimeout(() => m.openPopup(), 850);
+      }
+    });
+  });
+}
+
+document.getElementById('search').addEventListener('input', (e) => {
+  searchTerm = e.target.value;
+  renderMarkers();
+});
+
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const status = chip.dataset.status;
+    if(status !== 'operational' && !hasPro){
+      openPaywall();
+      return;
+    }
+    if(activeStatuses.has(status)){
+      activeStatuses.delete(status);
+      chip.classList.remove('active');
+    } else {
+      activeStatuses.add(status);
+      chip.classList.add('active');
+    }
+    renderMarkers();
+  });
+});
+
+document.getElementById('locbtn').addEventListener('click', () => {
+  const btn = document.getElementById('locbtn');
+  if(!navigator.geolocation){
+    alert('Geolocation is not supported by your browser.');
+    return;
+  }
+  btn.textContent = 'LOCATING...';
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg> LOCATION ACTIVE`;
+    btn.classList.add('active');
+    if(userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([userLatLng.lat, userLatLng.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#ef4b5c;border:2px solid #0a0c10;box-shadow:0 0 10px #ef4b5c;"></div>`,
+        iconSize:[16,16], iconAnchor:[8,8]
+      })
+    }).addTo(map).bindPopup('Your location');
+    map.flyTo([userLatLng.lat, userLatLng.lng], 7, { duration: 1 });
+    renderList();
+  }, err => {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg> USE MY LOCATION`;
+    alert('Could not get your location. Please check browser permissions.');
+  });
+});
+
+// ---- Monetization (RevenueCat) ----
+// Uses the Capacitor plugin bridge directly (Capacitor.Plugins.Purchases) so
+// no bundler/import step is required for this plain HTML/JS app.
+const REVENUECAT_ANDROID_API_KEY = 'goog_lIHtXlXMVIvthgfLUYKZozxiCEl';
+
+function getPurchases(){
+  return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Purchases) || null;
+}
+
+async function initPurchases(){
+  const Purchases = getPurchases();
+  if(!Purchases){
+    console.warn('RevenueCat plugin not available (likely running outside the native app).');
+    return;
+  }
+  try {
+    await Purchases.configure({ apiKey: REVENUECAT_ANDROID_API_KEY });
+    await refreshEntitlement();
+  } catch (err) {
+    console.error('RevenueCat init failed', err);
+  }
+}
+
+async function refreshEntitlement(){
+  if(TEST_FORCE_PRO) { applyEntitlementUI(); return; } // skip real check while testing
+  const Purchases = getPurchases();
+  if(!Purchases) return;
+  try {
+    const result = await Purchases.getCustomerInfo();
+    const active = result && result.customerInfo && result.customerInfo.entitlements
+      && result.customerInfo.entitlements.active;
+    hasPro = !!(active && active['pro']);
+    applyEntitlementUI();
+  } catch (err) {
+    console.error('Could not fetch entitlement', err);
+  }
+}
+
+function applyEntitlementUI(){
+  document.querySelectorAll('.chip[data-status="construction"], .chip[data-status="proposed"]').forEach(chip => {
+    if(hasPro){
+      chip.classList.remove('locked');
+      chip.classList.add('active');
+      chip.querySelector('.lock')?.remove();
+      activeStatuses.add(chip.dataset.status);
+    }
+  });
+  const row = document.getElementById('upgradeRow');
+  if(row) row.style.display = hasPro ? 'none' : 'block';
+  const notifyRow = document.getElementById('notifyRow');
+  if(notifyRow) notifyRow.style.display = hasPro ? 'block' : 'none';
+  renderMarkers();
+}
+
+function openPaywall(){
+  document.getElementById('paywall-overlay').classList.add('show');
+}
+function closePaywall(){
+  document.getElementById('paywall-overlay').classList.remove('show');
+}
+
+document.getElementById('upgradeBtn')?.addEventListener('click', openPaywall);
+document.getElementById('paywall-close').addEventListener('click', closePaywall);
+document.getElementById('paywall-overlay').addEventListener('click', (e) => {
+  if(e.target.id === 'paywall-overlay') closePaywall();
+});
+
+document.getElementById('paywall-buy').addEventListener('click', async () => {
+  const Purchases = getPurchases();
+  const btn = document.getElementById('paywall-buy');
+  if(!Purchases){
+    alert('Purchases are only available in the installed app, not this preview.');
+    return;
+  }
+  btn.textContent = 'Processing...';
+  try {
+    const offerings = await Purchases.getOfferings();
+    const pkg = offerings?.current?.availablePackages?.[0];
+    if(!pkg){ throw new Error('No package available'); }
+    const result = await Purchases.purchasePackage({ aPackage: pkg });
+    const active = result?.customerInfo?.entitlements?.active;
+    if(active && active['pro']){
+      hasPro = true;
+      applyEntitlementUI();
+      closePaywall();
+    }
+  } catch (err) {
+    console.error('Purchase failed', err);
+    if(!String(err).includes('cancel')){
+      alert("Couldn't complete purchase. Please try again.");
+    }
+  } finally {
+    btn.textContent = 'Start Subscription';
+  }
+});
+
+document.getElementById('paywall-restore').addEventListener('click', async () => {
+  const Purchases = getPurchases();
+  if(!Purchases) return;
+  try {
+    const result = await Purchases.restorePurchases();
+    const active = result?.customerInfo?.entitlements?.active;
+    if(active && active['pro']){
+      hasPro = true;
+      applyEntitlementUI();
+      closePaywall();
+      alert('Pro access restored.');
+    } else {
+      alert('No previous purchase found for this account.');
+    }
+  } catch (err) {
+    console.error('Restore failed', err);
+  }
+});
+
+// ---- Notifications ----
+function getPushPlugin(){
+  return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications) || null;
+}
+
+async function upsertDeviceToken(fcmToken){
+  const payload = {
+    fcm_token: fcmToken,
+    lat: userLatLng ? userLatLng.lat : null,
+    lng: userLatLng ? userLatLng.lng : null,
+    radius_miles: 100
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/register-device`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      console.error('Device token upsert failed', res.status, errText);
+      return { ok: false, detail: `HTTP ${res.status}: ${errText}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('Could not register device token', err);
+    return { ok: false, detail: String(err) };
+  }
+}
+
+document.getElementById('notifyBtn')?.addEventListener('click', async () => {
+  const Push = getPushPlugin();
+  const btn = document.getElementById('notifyBtn');
+  if(!Push){
+    alert('Notifications are only available in the installed app, not this preview.');
+    return;
+  }
+  btn.textContent = 'Requesting permission...';
+  try {
+    const perm = await Push.requestPermissions();
+    if(perm.receive !== 'granted'){
+      btn.textContent = '🔔 Notify me about status changes near me';
+      alert('Notification permission was not granted. You can enable it later in system settings.');
+      return;
+    }
+    await Push.register();
+    Push.addListener('registration', async (token) => {
+      const result = await upsertDeviceToken(token.value);
+      if(result.ok){
+        btn.textContent = '🔔 Notifications enabled';
+        btn.classList.add('enabled');
+      } else {
+        btn.textContent = '🔔 Notify me about status changes near me';
+        alert("Couldn't finish setting up notifications:\n\n" + result.detail);
+      }
+    });
+    Push.addListener('registrationError', (err) => {
+      console.error('Push registration error', err);
+      btn.textContent = '🔔 Notify me about status changes near me';
+      alert("Couldn't register for notifications. Please try again.");
+    });
+  } catch (err) {
+    console.error('Push setup failed', err);
+    btn.textContent = '🔔 Notify me about status changes near me';
+  }
+});
+
+// ---- Community reports (submission) ----
+function openReportModal(){
+  const statusEl = document.getElementById('report-loc-status');
+  if(userLatLng){
+    statusEl.textContent = `Using your current location (${userLatLng.lat.toFixed(3)}, ${userLatLng.lng.toFixed(3)}).`;
+    statusEl.classList.remove('error');
+    document.getElementById('report-submit').disabled = false;
+  } else {
+    statusEl.textContent = "Location not available. Tap \"Use My Location\" on the main screen first, then try reporting again.";
+    statusEl.classList.add('error');
+    document.getElementById('report-submit').disabled = true;
+  }
+  document.getElementById('report-overlay').classList.add('show');
+}
+function closeReportModal(){
+  document.getElementById('report-overlay').classList.remove('show');
+  document.getElementById('report-description').value = '';
+}
+
+document.getElementById('reportBtn').addEventListener('click', openReportModal);
+document.getElementById('report-close').addEventListener('click', closeReportModal);
+document.getElementById('report-overlay').addEventListener('click', (e) => {
+  if(e.target.id === 'report-overlay') closeReportModal();
+});
+
+document.getElementById('report-submit').addEventListener('click', async () => {
+  if(!userLatLng) return;
+  const btn = document.getElementById('report-submit');
+  const description = document.getElementById('report-description').value;
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/report-facility`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ lat: userLatLng.lat, lng: userLatLng.lng, description })
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText}`);
+    }
+    closeReportModal();
+    alert('Thanks — your report has been added to the map for other users to see.');
+    // Refresh community layer so the new pin shows immediately
+    const reports = await fetchCommunityReports();
+    communityMarkers.forEach(m => map.removeLayer(m));
+    communityMarkers = reports.map(r => {
+      const marker = L.marker([r.lat, r.lng], { icon: makeCommunityIcon() });
+      const desc = r.description ? escapeHtml(r.description) : 'No additional details provided.';
+      const date = new Date(r.created_at).toLocaleDateString();
+      marker.bindPopup(`
+        <div class="pop-name">Community Reported</div>
+        <div class="pop-company" style="color:#ef4b5c;">Unverified · ${date}</div>
+        <div class="pop-note">${desc}</div>
+      `);
+      marker.addTo(map);
+      return marker;
+    });
+  } catch (err) {
+    console.error('Report submission failed', err);
+    alert("Couldn't submit your report:\n\n" + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit Report';
+  }
+});
+
+document.getElementById('cameraToggle').addEventListener('click', () => {
+  camerasVisible = !camerasVisible;
+  document.getElementById('cameraToggle').classList.toggle('active', camerasVisible);
+  if(!camerasVisible) document.getElementById('cameraHint').style.display = 'none';
+  refreshCameraLayer();
+});
+
+initMap();
+initPurchases();
+</script>
+</body>
+</html>
